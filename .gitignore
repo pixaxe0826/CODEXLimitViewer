@@ -1,0 +1,16 @@
+# Local build and diagnostic artifacts
+*.log
+*.user
+*.pdb
+*.tmp
+*.bak
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Screenshot and capture artifacts
+.*.png
+
+# Keep the reviewed distributable executable in dist.
+!dist/CodexQuotaOverlay.exe
