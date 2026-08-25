@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex Plus quotas")]
 [assembly: System.Reflection.AssemblyCompany("Local")]
 [assembly: System.Reflection.AssemblyProduct("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyVersion("1.3.2.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.2.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.4.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.4.0")]
 
 internal static class Program
 {
@@ -102,11 +102,11 @@ internal static class Program
 internal sealed class OverlayForm : Form
 {
     private const int WidthPixels = 330;
-    private const int HeightPixels = 260;
+    private const int HeightPixels = 290;
     private const int FiveHourSectionTop = 28;
-    private const int WeeklySectionTop = 141;
-    private const int SectionSeparatorY = 138;
-    private const int MinimumPercentageTrackGap = 16;
+    private const int WeeklySectionTop = 156;
+    private const int SectionSeparatorY = 153;
+    private const int MinimumPercentageTrackGap = 0;
     private const int WmNclButtonDown = 0x00A1;
     private const int HtCaption = 2;
 
@@ -316,22 +316,22 @@ internal sealed class OverlayForm : Form
 
     private static Rectangle PercentageBounds(int top)
     {
-        return new Rectangle(18, top + 20, 112, 35);
+        return new Rectangle(18, top + 35, 140, 52);
     }
 
     private static Rectangle RemainingLabelBounds(int top)
     {
-        return new Rectangle(135, top + 28, 48, 20);
+        return new Rectangle(164, top + 43, 48, 20);
     }
 
     private static Rectangle ProgressTrackBounds(int top)
     {
-        return new Rectangle(18, top + 71, 294, 7);
+        return new Rectangle(18, top + 87, 294, 7);
     }
 
     private static Rectangle ResetTextBounds(int top)
     {
-        return new Rectangle(18, top + 83, 294, 24);
+        return new Rectangle(18, top + 100, 294, 24);
     }
 
     private void ValidateLayout()
@@ -379,6 +379,7 @@ internal sealed class OverlayForm : Form
 
         ValidatePercentageTrackGap(problems, "5시간", FiveHourSectionTop);
         ValidatePercentageTrackGap(problems, "주간", WeeklySectionTop);
+        ValidatePercentageTextFits(problems);
 
         if (problems.Count > 0)
         {
@@ -392,6 +393,23 @@ internal sealed class OverlayForm : Form
         if (gap < MinimumPercentageTrackGap)
         {
             problems.Add(sectionName + " 비율과 진행도 사이 간격이 부족합니다: " + gap + "px");
+        }
+    }
+
+    private static void ValidatePercentageTextFits(List<string> problems)
+    {
+        Rectangle bounds = PercentageBounds(FiveHourSectionTop);
+        using (Font font = new Font("Segoe UI Semibold", 19f))
+        {
+            Size naturalSize = TextRenderer.MeasureText(
+                "99.9%",
+                font,
+                new Size(1000, 1000),
+                TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+            if (naturalSize.Width > bounds.Width || naturalSize.Height > bounds.Height)
+            {
+                problems.Add("비율 글자가 영역보다 큽니다: " + naturalSize + " > " + bounds.Size);
+            }
         }
     }
 
