@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex Plus quotas")]
 [assembly: System.Reflection.AssemblyCompany("Local")]
 [assembly: System.Reflection.AssemblyProduct("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyVersion("1.3.6.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.6.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.7.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.7.0")]
 
 internal static class Program
 {
@@ -107,7 +107,7 @@ internal sealed class OverlayForm : Form
     private const int WeeklySectionTop = 141;
     private const int SectionSeparatorY = 138;
     private const int MinimumPercentageTrackGap = 0;
-    private const int RemainingAdvanceAdjustment = -2;
+    private const int RemainingAdvanceAdjustment = 2;
     private const int WmNclButtonDown = 0x00A1;
     private const int HtCaption = 2;
 
@@ -326,7 +326,7 @@ internal sealed class OverlayForm : Form
 
     private static Rectangle RemainingLabelBounds(int top, int left)
     {
-        return new Rectangle(left, top + 39, 48, 30);
+        return new Rectangle(left, top + 35, 48, 30);
     }
 
     private static Rectangle PercentageAndRemainingBounds(int top)
