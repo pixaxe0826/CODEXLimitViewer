@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex Plus quotas")]
 [assembly: System.Reflection.AssemblyCompany("Local")]
 [assembly: System.Reflection.AssemblyProduct("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.1.0")]
 
 internal static class Program
 {
@@ -102,7 +102,10 @@ internal static class Program
 internal sealed class OverlayForm : Form
 {
     private const int WidthPixels = 330;
-    private const int HeightPixels = 238;
+    private const int HeightPixels = 242;
+    private const int FiveHourSectionTop = 31;
+    private const int WeeklySectionTop = 134;
+    private const int SectionSeparatorY = 132;
     private const int WmNclButtonDown = 0x00A1;
     private const int HtCaption = 2;
 
@@ -110,8 +113,8 @@ internal sealed class OverlayForm : Form
     private readonly System.Windows.Forms.Timer _refreshTimer = new System.Windows.Forms.Timer();
     private readonly System.Windows.Forms.Timer _displayTimer = new System.Windows.Forms.Timer();
     private readonly bool _liveCheck;
-    private readonly Rectangle _refreshBounds = new Rectangle(276, 8, 25, 25);
-    private readonly Rectangle _closeBounds = new Rectangle(301, 8, 25, 25);
+    private readonly Rectangle _refreshBounds = new Rectangle(276, 2, 25, 25);
+    private readonly Rectangle _closeBounds = new Rectangle(301, 2, 25, 25);
     private readonly string _settingsPath = Path.Combine(Program.DataDirectory, "settings.txt");
 
     private Process _codexProcess;
@@ -155,6 +158,7 @@ internal sealed class OverlayForm : Form
 
         RestorePosition();
         UpdateRoundedRegion();
+        ValidateLayout();
 
         _refreshTimer.Interval = 60000;
         _refreshTimer.Tick += delegate { RefreshQuota(); };
@@ -193,6 +197,7 @@ internal sealed class OverlayForm : Form
         {
             throw new InvalidOperationException("오버레이 구성 요소 검증에 실패했습니다.");
         }
+        ValidateLayout();
     }
 
     protected override void OnShown(EventArgs e)
@@ -232,35 +237,35 @@ internal sealed class OverlayForm : Form
 
         using (SolidBrush dotBrush = new SolidBrush(_weeklyAccent))
         {
-            graphics.FillEllipse(dotBrush, 18, 19, 7, 7);
+            graphics.FillEllipse(dotBrush, 18, 12, 7, 7);
         }
 
         DrawText(graphics, "CODEX · Plus 한도", new Font("Segoe UI Semibold", 9f),
-            Color.FromArgb(200, 210, 225), new Rectangle(33, 11, 220, 24), TextFormatFlags.VerticalCenter);
+            Color.FromArgb(200, 210, 225), new Rectangle(33, 4, 220, 24), TextFormatFlags.VerticalCenter);
         DrawHeaderControls(graphics);
 
-        DrawQuotaSection(graphics, "5시간 한도", _fiveHourRemainingPercent, _fiveHourResetsAt, _fiveHourAccent, 39);
+        DrawQuotaSection(graphics, "5시간 한도", _fiveHourRemainingPercent, _fiveHourResetsAt, _fiveHourAccent, FiveHourSectionTop);
         using (Pen separator = new Pen(Color.FromArgb(43, 58, 79), 1f))
         {
-            graphics.DrawLine(separator, 18, 132, 312, 132);
+            graphics.DrawLine(separator, 18, SectionSeparatorY, 312, SectionSeparatorY);
         }
-        DrawQuotaSection(graphics, "주간 한도", _weeklyRemainingPercent, _weeklyResetsAt, _weeklyAccent, 141);
+        DrawQuotaSection(graphics, "주간 한도", _weeklyRemainingPercent, _weeklyResetsAt, _weeklyAccent, WeeklySectionTop);
     }
 
     private void DrawQuotaSection(Graphics graphics, string label, double? remainingPercent, DateTimeOffset? resetsAt, Color accent, int top)
     {
         DrawText(graphics, label, new Font("Segoe UI Semibold", 8.5f), Color.FromArgb(176, 190, 209),
-            new Rectangle(18, top, 110, 20), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+            SectionLabelBounds(top), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
         DrawText(graphics, remainingPercent.HasValue ? "실시간" : "정보 없음", new Font("Segoe UI", 8f), Color.FromArgb(112, 129, 152),
-            new Rectangle(240, top, 70, 20), TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
+            LiveStatusBounds(top), TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
 
         string percent = remainingPercent.HasValue ? remainingPercent.Value.ToString("0.#", CultureInfo.InvariantCulture) + "%" : "--";
         DrawText(graphics, percent, new Font("Segoe UI Semibold", 19f), Color.FromArgb(248, 250, 252),
-            new Rectangle(18, top + 17, 112, 35), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+            PercentageBounds(top), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
         DrawText(graphics, "남음", new Font("Segoe UI", 9f), Color.FromArgb(143, 160, 183),
-            new Rectangle(111, top + 25, 48, 20), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+            RemainingLabelBounds(top), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
-        Rectangle track = new Rectangle(18, top + 57, 294, 7);
+        Rectangle track = ProgressTrackBounds(top);
         using (GraphicsPath trackPath = RoundedRectangle(track, 4))
         using (SolidBrush trackBrush = new SolidBrush(Color.FromArgb(38, 50, 71)))
         {
@@ -277,7 +282,7 @@ internal sealed class OverlayForm : Form
             }
         }
         DrawText(graphics, GetResetText(resetsAt), new Font("Segoe UI", 8f), Color.FromArgb(143, 160, 183),
-            new Rectangle(18, top + 66, 294, 24), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            ResetTextBounds(top), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
 
     private void DrawHeaderControls(Graphics graphics)
@@ -288,13 +293,92 @@ internal sealed class OverlayForm : Form
             pen.StartCap = LineCap.Round;
             pen.EndCap = LineCap.Round;
 
-            RectangleF refreshArc = new RectangleF(282.5f, 14.0f, 12.0f, 12.0f);
+            RectangleF refreshArc = new RectangleF(282.5f, 8.0f, 12.0f, 12.0f);
             graphics.DrawArc(pen, refreshArc, 32f, 286f);
-            graphics.DrawLine(pen, 292.8f, 13.6f, 295.5f, 13.8f);
-            graphics.DrawLine(pen, 295.5f, 13.8f, 295.0f, 16.5f);
+            graphics.DrawLine(pen, 292.8f, 7.6f, 295.5f, 7.8f);
+            graphics.DrawLine(pen, 295.5f, 7.8f, 295.0f, 10.5f);
 
-            graphics.DrawLine(pen, 309.0f, 16.0f, 318.0f, 25.0f);
-            graphics.DrawLine(pen, 318.0f, 16.0f, 309.0f, 25.0f);
+            graphics.DrawLine(pen, 309.0f, 10.0f, 318.0f, 19.0f);
+            graphics.DrawLine(pen, 318.0f, 10.0f, 309.0f, 19.0f);
+        }
+    }
+
+    private static Rectangle SectionLabelBounds(int top)
+    {
+        return new Rectangle(18, top, 110, 20);
+    }
+
+    private static Rectangle LiveStatusBounds(int top)
+    {
+        return new Rectangle(240, top, 70, 20);
+    }
+
+    private static Rectangle PercentageBounds(int top)
+    {
+        return new Rectangle(18, top + 20, 112, 35);
+    }
+
+    private static Rectangle RemainingLabelBounds(int top)
+    {
+        return new Rectangle(135, top + 28, 48, 20);
+    }
+
+    private static Rectangle ProgressTrackBounds(int top)
+    {
+        return new Rectangle(18, top + 62, 294, 7);
+    }
+
+    private static Rectangle ResetTextBounds(int top)
+    {
+        return new Rectangle(18, top + 74, 294, 24);
+    }
+
+    private void ValidateLayout()
+    {
+        List<KeyValuePair<string, Rectangle>> components = new List<KeyValuePair<string, Rectangle>>
+        {
+            new KeyValuePair<string, Rectangle>("상태 점", new Rectangle(18, 12, 7, 7)),
+            new KeyValuePair<string, Rectangle>("제목", new Rectangle(33, 4, 220, 24)),
+            new KeyValuePair<string, Rectangle>("새로고침", _refreshBounds),
+            new KeyValuePair<string, Rectangle>("닫기", _closeBounds),
+            new KeyValuePair<string, Rectangle>("5시간 제목", SectionLabelBounds(FiveHourSectionTop)),
+            new KeyValuePair<string, Rectangle>("5시간 상태", LiveStatusBounds(FiveHourSectionTop)),
+            new KeyValuePair<string, Rectangle>("5시간 비율", PercentageBounds(FiveHourSectionTop)),
+            new KeyValuePair<string, Rectangle>("5시간 남음", RemainingLabelBounds(FiveHourSectionTop)),
+            new KeyValuePair<string, Rectangle>("5시간 진행도", ProgressTrackBounds(FiveHourSectionTop)),
+            new KeyValuePair<string, Rectangle>("5시간 초기화", ResetTextBounds(FiveHourSectionTop)),
+            new KeyValuePair<string, Rectangle>("구분선", new Rectangle(18, SectionSeparatorY, 294, 1)),
+            new KeyValuePair<string, Rectangle>("주간 제목", SectionLabelBounds(WeeklySectionTop)),
+            new KeyValuePair<string, Rectangle>("주간 상태", LiveStatusBounds(WeeklySectionTop)),
+            new KeyValuePair<string, Rectangle>("주간 비율", PercentageBounds(WeeklySectionTop)),
+            new KeyValuePair<string, Rectangle>("주간 남음", RemainingLabelBounds(WeeklySectionTop)),
+            new KeyValuePair<string, Rectangle>("주간 진행도", ProgressTrackBounds(WeeklySectionTop)),
+            new KeyValuePair<string, Rectangle>("주간 초기화", ResetTextBounds(WeeklySectionTop))
+        };
+
+        Rectangle clientBounds = new Rectangle(0, 0, WidthPixels, HeightPixels);
+        List<string> problems = new List<string>();
+        for (int index = 0; index < components.Count; index++)
+        {
+            KeyValuePair<string, Rectangle> current = components[index];
+            if (!clientBounds.Contains(current.Value))
+            {
+                problems.Add(current.Key + "이(가) 창 밖에 있습니다: " + current.Value);
+            }
+
+            for (int otherIndex = index + 1; otherIndex < components.Count; otherIndex++)
+            {
+                KeyValuePair<string, Rectangle> other = components[otherIndex];
+                if (current.Value.IntersectsWith(other.Value))
+                {
+                    problems.Add(current.Key + " ↔ " + other.Key + ": " + Rectangle.Intersect(current.Value, other.Value));
+                }
+            }
+        }
+
+        if (problems.Count > 0)
+        {
+            throw new InvalidOperationException("오버레이 좌표 충돌:\r\n" + string.Join("\r\n", problems.ToArray()));
         }
     }
 
