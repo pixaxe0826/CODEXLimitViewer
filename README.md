@@ -1,6 +1,6 @@
 # Codex Limit Viewer
 
-Windows 화면 위에 Codex의 남은 사용량과 초기화 시각을 표시하는 가벼운 오버레이입니다.
+Windows 화면 위에 Codex Plus의 5시간·주간 한도와 각 초기화 시각을 표시하는 가벼운 오버레이입니다.
 
 ![Codex Limit Viewer](assets/codex-quota-icon.png)
 
@@ -15,7 +15,8 @@ Windows SmartScreen이 표시되면 파일의 출처를 확인한 뒤 `추가 �
 ## 동작 방식
 
 - 공식 Codex App Server의 `account/rateLimits/read`를 호출합니다.
-- `usedPercent`에서 남은 비율을 계산하고, 약 7일(10,080분) 창을 주간 한도로 표시합니다.
+- `usedPercent`에서 남은 비율을 계산하고, 약 5시간(300분) 창과 약 7일(10,080분) 창을 별도 게이지로 표시합니다.
+- 5시간 창을 현재 계정 응답에서 받을 수 없는 경우에는 해당 게이지에 `정보 없음`을 표시합니다.
 - 계정 토큰을 읽거나 복사하지 않습니다. 사용자의 기존 Codex 로그인 상태를 사용합니다.
 - Microsoft Store판 Codex는 첫 실행에 필요한 공식 `codex.exe` 복사본을 `%LOCALAPPDATA%\CodexQuotaOverlay\runtime`에 준비할 수 있습니다.
 - 오버레이 위치와 오류 로그는 `%LOCALAPPDATA%\CodexQuotaOverlay`에만 저장됩니다.
