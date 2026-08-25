@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex Plus quotas")]
 [assembly: System.Reflection.AssemblyCompany("Local")]
 [assembly: System.Reflection.AssemblyProduct("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyVersion("1.3.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.2.0")]
 
 internal static class Program
 {
@@ -102,10 +102,11 @@ internal static class Program
 internal sealed class OverlayForm : Form
 {
     private const int WidthPixels = 330;
-    private const int HeightPixels = 242;
-    private const int FiveHourSectionTop = 31;
-    private const int WeeklySectionTop = 134;
-    private const int SectionSeparatorY = 132;
+    private const int HeightPixels = 260;
+    private const int FiveHourSectionTop = 28;
+    private const int WeeklySectionTop = 141;
+    private const int SectionSeparatorY = 138;
+    private const int MinimumPercentageTrackGap = 16;
     private const int WmNclButtonDown = 0x00A1;
     private const int HtCaption = 2;
 
@@ -113,8 +114,8 @@ internal sealed class OverlayForm : Form
     private readonly System.Windows.Forms.Timer _refreshTimer = new System.Windows.Forms.Timer();
     private readonly System.Windows.Forms.Timer _displayTimer = new System.Windows.Forms.Timer();
     private readonly bool _liveCheck;
-    private readonly Rectangle _refreshBounds = new Rectangle(276, 2, 25, 25);
-    private readonly Rectangle _closeBounds = new Rectangle(301, 2, 25, 25);
+    private readonly Rectangle _refreshBounds = new Rectangle(276, 0, 25, 25);
+    private readonly Rectangle _closeBounds = new Rectangle(301, 0, 25, 25);
     private readonly string _settingsPath = Path.Combine(Program.DataDirectory, "settings.txt");
 
     private Process _codexProcess;
@@ -237,11 +238,11 @@ internal sealed class OverlayForm : Form
 
         using (SolidBrush dotBrush = new SolidBrush(_weeklyAccent))
         {
-            graphics.FillEllipse(dotBrush, 18, 12, 7, 7);
+            graphics.FillEllipse(dotBrush, 18, 10, 7, 7);
         }
 
         DrawText(graphics, "CODEX · Plus 한도", new Font("Segoe UI Semibold", 9f),
-            Color.FromArgb(200, 210, 225), new Rectangle(33, 4, 220, 24), TextFormatFlags.VerticalCenter);
+            Color.FromArgb(200, 210, 225), new Rectangle(33, 2, 220, 24), TextFormatFlags.VerticalCenter);
         DrawHeaderControls(graphics);
 
         DrawQuotaSection(graphics, "5시간 한도", _fiveHourRemainingPercent, _fiveHourResetsAt, _fiveHourAccent, FiveHourSectionTop);
@@ -261,7 +262,7 @@ internal sealed class OverlayForm : Form
 
         string percent = remainingPercent.HasValue ? remainingPercent.Value.ToString("0.#", CultureInfo.InvariantCulture) + "%" : "--";
         DrawText(graphics, percent, new Font("Segoe UI Semibold", 19f), Color.FromArgb(248, 250, 252),
-            PercentageBounds(top), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+            PercentageBounds(top), TextFormatFlags.Left | TextFormatFlags.Top);
         DrawText(graphics, "남음", new Font("Segoe UI", 9f), Color.FromArgb(143, 160, 183),
             RemainingLabelBounds(top), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
@@ -293,13 +294,13 @@ internal sealed class OverlayForm : Form
             pen.StartCap = LineCap.Round;
             pen.EndCap = LineCap.Round;
 
-            RectangleF refreshArc = new RectangleF(282.5f, 8.0f, 12.0f, 12.0f);
+            RectangleF refreshArc = new RectangleF(282.5f, 6.0f, 12.0f, 12.0f);
             graphics.DrawArc(pen, refreshArc, 32f, 286f);
-            graphics.DrawLine(pen, 292.8f, 7.6f, 295.5f, 7.8f);
-            graphics.DrawLine(pen, 295.5f, 7.8f, 295.0f, 10.5f);
+            graphics.DrawLine(pen, 292.8f, 5.6f, 295.5f, 5.8f);
+            graphics.DrawLine(pen, 295.5f, 5.8f, 295.0f, 8.5f);
 
-            graphics.DrawLine(pen, 309.0f, 10.0f, 318.0f, 19.0f);
-            graphics.DrawLine(pen, 318.0f, 10.0f, 309.0f, 19.0f);
+            graphics.DrawLine(pen, 309.0f, 8.0f, 318.0f, 17.0f);
+            graphics.DrawLine(pen, 318.0f, 8.0f, 309.0f, 17.0f);
         }
     }
 
@@ -325,20 +326,20 @@ internal sealed class OverlayForm : Form
 
     private static Rectangle ProgressTrackBounds(int top)
     {
-        return new Rectangle(18, top + 62, 294, 7);
+        return new Rectangle(18, top + 71, 294, 7);
     }
 
     private static Rectangle ResetTextBounds(int top)
     {
-        return new Rectangle(18, top + 74, 294, 24);
+        return new Rectangle(18, top + 83, 294, 24);
     }
 
     private void ValidateLayout()
     {
         List<KeyValuePair<string, Rectangle>> components = new List<KeyValuePair<string, Rectangle>>
         {
-            new KeyValuePair<string, Rectangle>("상태 점", new Rectangle(18, 12, 7, 7)),
-            new KeyValuePair<string, Rectangle>("제목", new Rectangle(33, 4, 220, 24)),
+            new KeyValuePair<string, Rectangle>("상태 점", new Rectangle(18, 10, 7, 7)),
+            new KeyValuePair<string, Rectangle>("제목", new Rectangle(33, 2, 220, 24)),
             new KeyValuePair<string, Rectangle>("새로고침", _refreshBounds),
             new KeyValuePair<string, Rectangle>("닫기", _closeBounds),
             new KeyValuePair<string, Rectangle>("5시간 제목", SectionLabelBounds(FiveHourSectionTop)),
@@ -376,9 +377,21 @@ internal sealed class OverlayForm : Form
             }
         }
 
+        ValidatePercentageTrackGap(problems, "5시간", FiveHourSectionTop);
+        ValidatePercentageTrackGap(problems, "주간", WeeklySectionTop);
+
         if (problems.Count > 0)
         {
             throw new InvalidOperationException("오버레이 좌표 충돌:\r\n" + string.Join("\r\n", problems.ToArray()));
+        }
+    }
+
+    private static void ValidatePercentageTrackGap(List<string> problems, string sectionName, int top)
+    {
+        int gap = ProgressTrackBounds(top).Top - PercentageBounds(top).Bottom;
+        if (gap < MinimumPercentageTrackGap)
+        {
+            problems.Add(sectionName + " 비율과 진행도 사이 간격이 부족합니다: " + gap + "px");
         }
     }
 
