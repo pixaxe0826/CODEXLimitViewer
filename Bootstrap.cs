@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex Plus quotas")]
 [assembly: System.Reflection.AssemblyCompany("Local")]
 [assembly: System.Reflection.AssemblyProduct("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyVersion("1.3.4.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.4.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.6.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.6.0")]
 
 internal static class Program
 {
@@ -102,11 +102,12 @@ internal static class Program
 internal sealed class OverlayForm : Form
 {
     private const int WidthPixels = 330;
-    private const int HeightPixels = 290;
-    private const int FiveHourSectionTop = 28;
-    private const int WeeklySectionTop = 156;
-    private const int SectionSeparatorY = 153;
+    private const int HeightPixels = 260;
+    private const int FiveHourSectionTop = 30;
+    private const int WeeklySectionTop = 141;
+    private const int SectionSeparatorY = 138;
     private const int MinimumPercentageTrackGap = 0;
+    private const int RemainingAdvanceAdjustment = -2;
     private const int WmNclButtonDown = 0x00A1;
     private const int HtCaption = 2;
 
@@ -241,7 +242,7 @@ internal sealed class OverlayForm : Form
             graphics.FillEllipse(dotBrush, 18, 10, 7, 7);
         }
 
-        DrawText(graphics, "CODEX · Plus 한도", new Font("Segoe UI Semibold", 9f),
+        DrawText(graphics, "CODEX 한도", new Font("Segoe UI Semibold", 9f),
             Color.FromArgb(200, 210, 225), new Rectangle(33, 2, 220, 24), TextFormatFlags.VerticalCenter);
         DrawHeaderControls(graphics);
 
@@ -257,14 +258,23 @@ internal sealed class OverlayForm : Form
     {
         DrawText(graphics, label, new Font("Segoe UI Semibold", 8.5f), Color.FromArgb(176, 190, 209),
             SectionLabelBounds(top), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
-        DrawText(graphics, remainingPercent.HasValue ? "실시간" : "정보 없음", new Font("Segoe UI", 8f), Color.FromArgb(112, 129, 152),
-            LiveStatusBounds(top), TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
 
         string percent = remainingPercent.HasValue ? remainingPercent.Value.ToString("0.#", CultureInfo.InvariantCulture) + "%" : "--";
+        Size percentageNaturalSize;
+        using (Font percentageFont = new Font("Segoe UI Semibold", 19f))
+        {
+            percentageNaturalSize = TextRenderer.MeasureText(
+                graphics,
+                percent,
+                percentageFont,
+                new Size(1000, 1000),
+                TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+        }
         DrawText(graphics, percent, new Font("Segoe UI Semibold", 19f), Color.FromArgb(248, 250, 252),
-            PercentageBounds(top), TextFormatFlags.Left | TextFormatFlags.Top);
+            PercentageBounds(top), TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.SingleLine);
         DrawText(graphics, "남음", new Font("Segoe UI", 9f), Color.FromArgb(143, 160, 183),
-            RemainingLabelBounds(top), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+            RemainingLabelBounds(top, PercentageBounds(top).Left + percentageNaturalSize.Width + RemainingAdvanceAdjustment),
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
 
         Rectangle track = ProgressTrackBounds(top);
         using (GraphicsPath trackPath = RoundedRectangle(track, 4))
@@ -309,29 +319,29 @@ internal sealed class OverlayForm : Form
         return new Rectangle(18, top, 110, 20);
     }
 
-    private static Rectangle LiveStatusBounds(int top)
-    {
-        return new Rectangle(240, top, 70, 20);
-    }
-
     private static Rectangle PercentageBounds(int top)
     {
-        return new Rectangle(18, top + 35, 140, 52);
+        return new Rectangle(18, top + 18, 140, 52);
     }
 
-    private static Rectangle RemainingLabelBounds(int top)
+    private static Rectangle RemainingLabelBounds(int top, int left)
     {
-        return new Rectangle(164, top + 43, 48, 20);
+        return new Rectangle(left, top + 39, 48, 30);
+    }
+
+    private static Rectangle PercentageAndRemainingBounds(int top)
+    {
+        return new Rectangle(18, top + 20, 192, 50);
     }
 
     private static Rectangle ProgressTrackBounds(int top)
     {
-        return new Rectangle(18, top + 87, 294, 7);
+        return new Rectangle(18, top + 70, 294, 7);
     }
 
     private static Rectangle ResetTextBounds(int top)
     {
-        return new Rectangle(18, top + 100, 294, 24);
+        return new Rectangle(18, top + 83, 294, 24);
     }
 
     private void ValidateLayout()
@@ -343,16 +353,12 @@ internal sealed class OverlayForm : Form
             new KeyValuePair<string, Rectangle>("새로고침", _refreshBounds),
             new KeyValuePair<string, Rectangle>("닫기", _closeBounds),
             new KeyValuePair<string, Rectangle>("5시간 제목", SectionLabelBounds(FiveHourSectionTop)),
-            new KeyValuePair<string, Rectangle>("5시간 상태", LiveStatusBounds(FiveHourSectionTop)),
-            new KeyValuePair<string, Rectangle>("5시간 비율", PercentageBounds(FiveHourSectionTop)),
-            new KeyValuePair<string, Rectangle>("5시간 남음", RemainingLabelBounds(FiveHourSectionTop)),
+            new KeyValuePair<string, Rectangle>("5시간 비율 및 남음", PercentageAndRemainingBounds(FiveHourSectionTop)),
             new KeyValuePair<string, Rectangle>("5시간 진행도", ProgressTrackBounds(FiveHourSectionTop)),
             new KeyValuePair<string, Rectangle>("5시간 초기화", ResetTextBounds(FiveHourSectionTop)),
             new KeyValuePair<string, Rectangle>("구분선", new Rectangle(18, SectionSeparatorY, 294, 1)),
             new KeyValuePair<string, Rectangle>("주간 제목", SectionLabelBounds(WeeklySectionTop)),
-            new KeyValuePair<string, Rectangle>("주간 상태", LiveStatusBounds(WeeklySectionTop)),
-            new KeyValuePair<string, Rectangle>("주간 비율", PercentageBounds(WeeklySectionTop)),
-            new KeyValuePair<string, Rectangle>("주간 남음", RemainingLabelBounds(WeeklySectionTop)),
+            new KeyValuePair<string, Rectangle>("주간 비율 및 남음", PercentageAndRemainingBounds(WeeklySectionTop)),
             new KeyValuePair<string, Rectangle>("주간 진행도", ProgressTrackBounds(WeeklySectionTop)),
             new KeyValuePair<string, Rectangle>("주간 초기화", ResetTextBounds(WeeklySectionTop))
         };
@@ -379,7 +385,7 @@ internal sealed class OverlayForm : Form
 
         ValidatePercentageTrackGap(problems, "5시간", FiveHourSectionTop);
         ValidatePercentageTrackGap(problems, "주간", WeeklySectionTop);
-        ValidatePercentageTextFits(problems);
+        ValidateQuotaTextFits(problems);
 
         if (problems.Count > 0)
         {
@@ -396,20 +402,41 @@ internal sealed class OverlayForm : Form
         }
     }
 
-    private static void ValidatePercentageTextFits(List<string> problems)
+    private static void ValidateQuotaTextFits(List<string> problems)
     {
-        Rectangle bounds = PercentageBounds(FiveHourSectionTop);
-        using (Font font = new Font("Segoe UI Semibold", 19f))
+        Rectangle percentageBounds = PercentageBounds(FiveHourSectionTop);
+        Size percentageNaturalSize;
+        using (Font percentageFont = new Font("Segoe UI Semibold", 19f))
         {
-            Size naturalSize = TextRenderer.MeasureText(
+            percentageNaturalSize = TextRenderer.MeasureText(
                 "99.9%",
-                font,
+                percentageFont,
                 new Size(1000, 1000),
                 TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
-            if (naturalSize.Width > bounds.Width || naturalSize.Height > bounds.Height)
+            if (percentageNaturalSize.Width > percentageBounds.Width || percentageNaturalSize.Height > percentageBounds.Height)
             {
-                problems.Add("비율 글자가 영역보다 큽니다: " + naturalSize + " > " + bounds.Size);
+                problems.Add("비율 글자가 영역보다 큽니다: " + percentageNaturalSize + " > " + percentageBounds.Size);
             }
+        }
+
+        Rectangle remainingBounds = RemainingLabelBounds(
+            FiveHourSectionTop,
+            percentageBounds.Left + percentageNaturalSize.Width + RemainingAdvanceAdjustment);
+        using (Font remainingFont = new Font("Segoe UI", 9f))
+        {
+            Size remainingNaturalSize = TextRenderer.MeasureText(
+                "남음",
+                remainingFont,
+                new Size(1000, 1000),
+                TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+            if (remainingNaturalSize.Width > remainingBounds.Width || remainingNaturalSize.Height > remainingBounds.Height)
+            {
+                problems.Add("남음 글자가 영역보다 큽니다: " + remainingNaturalSize + " > " + remainingBounds.Size);
+            }
+        }
+        if (remainingBounds.Right > WidthPixels)
+        {
+            problems.Add("비율 뒤의 남음 글자가 창 밖에 있습니다: " + remainingBounds);
         }
     }
 
