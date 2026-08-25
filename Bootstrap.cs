@@ -13,11 +13,11 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex weekly quota")]
+[assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex Plus quotas")]
 [assembly: System.Reflection.AssemblyCompany("Local")]
 [assembly: System.Reflection.AssemblyProduct("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyVersion("1.2.4.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.2.4.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.0.0")]
 
 internal static class Program
 {
@@ -35,7 +35,7 @@ internal static class Program
         {
             if (!createdNew)
             {
-                MessageBox.Show("Codex 주간 한도 오버레이가 이미 실행 중입니다.", "Codex 주간 한도");
+                MessageBox.Show("Codex Plus 한도 오버레이가 이미 실행 중입니다.", "Codex Plus 한도");
                 return 0;
             }
 
@@ -65,9 +65,9 @@ internal static class Program
             {
                 Log("Fatal", exception);
                 MessageBox.Show(
-                    "Codex 주간 한도 오버레이를 실행하지 못했습니다.\r\n\r\n" + exception.Message +
+                    "Codex Plus 한도 오버레이를 실행하지 못했습니다.\r\n\r\n" + exception.Message +
                     "\r\n\r\n로그: " + LogPath,
-                    "Codex 주간 한도",
+                    "Codex Plus 한도",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 return 1;
@@ -102,7 +102,7 @@ internal static class Program
 internal sealed class OverlayForm : Form
 {
     private const int WidthPixels = 330;
-    private const int HeightPixels = 164;
+    private const int HeightPixels = 238;
     private const int WmNclButtonDown = 0x00A1;
     private const int HtCaption = 2;
 
@@ -123,13 +123,13 @@ internal sealed class OverlayForm : Form
     private DateTime _liveDeadline;
     private string _stderrTail = string.Empty;
 
-    private double? _remainingPercent;
-    private string _windowLabel = "주간 한도";
-    private string _planText = "연결 중";
+    private double? _weeklyRemainingPercent;
+    private DateTimeOffset? _weeklyResetsAt;
+    private double? _fiveHourRemainingPercent;
+    private DateTimeOffset? _fiveHourResetsAt;
     private string _statusMessage = "Codex에 연결하고 있습니다…";
-    private string _shortText = string.Empty;
-    private DateTimeOffset? _resetsAt;
-    private Color _accent = Color.FromArgb(245, 158, 11);
+    private Color _weeklyAccent = Color.FromArgb(245, 158, 11);
+    private Color _fiveHourAccent = Color.FromArgb(245, 158, 11);
 
     internal int ExitCode { get; private set; }
 
@@ -138,7 +138,7 @@ internal sealed class OverlayForm : Form
         _liveCheck = liveCheck;
         ExitCode = 0;
 
-        Text = "Codex 주간 한도";
+        Text = "Codex Plus 한도";
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         TopMost = true;
@@ -186,8 +186,10 @@ internal sealed class OverlayForm : Form
 
     internal void ValidateComponents()
     {
-        object parsed = _json.DeserializeObject("{\"rateLimits\":{\"limitId\":\"codex\"}}");
-        if (parsed == null || ClientSize.Width != WidthPixels || ClientSize.Height != HeightPixels)
+        Dictionary<string, object> parsed = AsDictionary(_json.DeserializeObject(
+            "{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":6,\"windowDurationMins\":300,\"resetsAt\":2000000000},\"secondary\":{\"usedPercent\":25,\"windowDurationMins\":10080,\"resetsAt\":2000500000}}}"));
+        QuotaSnapshot snapshot = ParseSnapshot(parsed);
+        if (snapshot.FiveHour == null || !snapshot.IsWeekly || ClientSize.Width != WidthPixels || ClientSize.Height != HeightPixels)
         {
             throw new InvalidOperationException("오버레이 구성 요소 검증에 실패했습니다.");
         }
@@ -228,47 +230,54 @@ internal sealed class OverlayForm : Form
             graphics.DrawRectangle(border, 0, 0, WidthPixels - 1, HeightPixels - 1);
         }
 
-        using (SolidBrush dotBrush = new SolidBrush(_accent))
+        using (SolidBrush dotBrush = new SolidBrush(_weeklyAccent))
         {
             graphics.FillEllipse(dotBrush, 18, 19, 7, 7);
         }
 
-        DrawText(graphics, "CODEX · " + _windowLabel, new Font("Segoe UI Semibold", 9f),
+        DrawText(graphics, "CODEX · Plus 한도", new Font("Segoe UI Semibold", 9f),
             Color.FromArgb(200, 210, 225), new Rectangle(33, 11, 220, 24), TextFormatFlags.VerticalCenter);
         DrawHeaderControls(graphics);
 
-        string percent = _remainingPercent.HasValue
-            ? _remainingPercent.Value.ToString("0.#", CultureInfo.InvariantCulture) + "%"
-            : "--";
-        DrawText(graphics, percent, new Font("Segoe UI Semibold", 24f), Color.FromArgb(248, 250, 252),
-            new Rectangle(18, 43, 170, 59), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
-        DrawText(graphics, "남음", new Font("Segoe UI", 9f), Color.FromArgb(143, 160, 183),
-            new Rectangle(120, 70, 48, 24), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
-        DrawText(graphics, _planText, new Font("Segoe UI", 8f), Color.FromArgb(112, 129, 152),
-            new Rectangle(240, 70, 70, 24), TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
+        DrawQuotaSection(graphics, "5시간 한도", _fiveHourRemainingPercent, _fiveHourResetsAt, _fiveHourAccent, 39);
+        using (Pen separator = new Pen(Color.FromArgb(43, 58, 79), 1f))
+        {
+            graphics.DrawLine(separator, 18, 132, 312, 132);
+        }
+        DrawQuotaSection(graphics, "주간 한도", _weeklyRemainingPercent, _weeklyResetsAt, _weeklyAccent, 141);
+    }
 
-        Rectangle track = new Rectangle(18, 108, 294, 7);
+    private void DrawQuotaSection(Graphics graphics, string label, double? remainingPercent, DateTimeOffset? resetsAt, Color accent, int top)
+    {
+        DrawText(graphics, label, new Font("Segoe UI Semibold", 8.5f), Color.FromArgb(176, 190, 209),
+            new Rectangle(18, top, 110, 20), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+        DrawText(graphics, remainingPercent.HasValue ? "실시간" : "정보 없음", new Font("Segoe UI", 8f), Color.FromArgb(112, 129, 152),
+            new Rectangle(240, top, 70, 20), TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
+
+        string percent = remainingPercent.HasValue ? remainingPercent.Value.ToString("0.#", CultureInfo.InvariantCulture) + "%" : "--";
+        DrawText(graphics, percent, new Font("Segoe UI Semibold", 19f), Color.FromArgb(248, 250, 252),
+            new Rectangle(18, top + 17, 112, 35), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+        DrawText(graphics, "남음", new Font("Segoe UI", 9f), Color.FromArgb(143, 160, 183),
+            new Rectangle(111, top + 25, 48, 20), TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+
+        Rectangle track = new Rectangle(18, top + 57, 294, 7);
         using (GraphicsPath trackPath = RoundedRectangle(track, 4))
         using (SolidBrush trackBrush = new SolidBrush(Color.FromArgb(38, 50, 71)))
         {
             graphics.FillPath(trackBrush, trackPath);
         }
-
-        if (_remainingPercent.HasValue)
+        if (remainingPercent.HasValue)
         {
-            int fillWidth = Math.Max(1, (int)Math.Round(track.Width * Math.Max(0, Math.Min(100, _remainingPercent.Value)) / 100.0));
+            int fillWidth = Math.Max(1, (int)Math.Round(track.Width * Math.Max(0, Math.Min(100, remainingPercent.Value)) / 100.0));
             Rectangle fill = new Rectangle(track.X, track.Y, fillWidth, track.Height);
             using (GraphicsPath fillPath = RoundedRectangle(fill, 4))
-            using (SolidBrush fillBrush = new SolidBrush(_accent))
+            using (SolidBrush fillBrush = new SolidBrush(accent))
             {
                 graphics.FillPath(fillBrush, fillPath);
             }
         }
-
-        DrawText(graphics, GetResetText(), new Font("Segoe UI", 8f), Color.FromArgb(143, 160, 183),
-            new Rectangle(18, 122, 225, 30), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-        DrawText(graphics, _shortText, new Font("Segoe UI", 7.5f), Color.FromArgb(101, 117, 141),
-            new Rectangle(218, 122, 94, 30), TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        DrawText(graphics, GetResetText(resetsAt), new Font("Segoe UI", 8f), Color.FromArgb(143, 160, 183),
+            new Rectangle(18, top + 66, 294, 24), TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
 
     private void DrawHeaderControls(Graphics graphics)
@@ -394,10 +403,13 @@ internal sealed class OverlayForm : Form
         try
         {
             StopCodexServer();
-            _planText = "연결 중";
             _statusMessage = "Codex app-server에 연결하고 있습니다…";
-            _shortText = string.Empty;
-            _accent = Color.FromArgb(245, 158, 11);
+            _weeklyRemainingPercent = null;
+            _fiveHourRemainingPercent = null;
+            _weeklyResetsAt = null;
+            _fiveHourResetsAt = null;
+            _weeklyAccent = Color.FromArgb(245, 158, 11);
+            _fiveHourAccent = _weeklyAccent;
             Invalidate();
 
             string executable = FindCodexExecutable();
@@ -622,9 +634,9 @@ internal sealed class OverlayForm : Form
             .ThenByDescending(w => w.DurationMins)
             .First();
 
-        QuotaWindow shorter = windows
-            .Where(w => string.Equals(w.LimitId, selected.LimitId, StringComparison.OrdinalIgnoreCase) && w.DurationMins < selected.DurationMins)
-            .OrderByDescending(w => w.DurationMins)
+        QuotaWindow fiveHour = windows
+            .Where(w => string.Equals(w.LimitId, selected.LimitId, StringComparison.OrdinalIgnoreCase) && w.IsFiveHour)
+            .OrderByDescending(w => w.IsMain)
             .FirstOrDefault();
 
         return new QuotaSnapshot
@@ -634,7 +646,7 @@ internal sealed class OverlayForm : Form
             ResetsAt = selected.ResetsAt,
             IsWeekly = selected.IsWeekly,
             WindowLabel = WindowLabel(selected.DurationMins),
-            Shorter = shorter
+            FiveHour = fiveHour
         };
     }
 
@@ -685,6 +697,7 @@ internal sealed class OverlayForm : Form
                 LimitId = limitId,
                 IsMain = isMain,
                 IsWeekly = duration >= 9360 && duration <= 10800,
+                IsFiveHour = duration >= 240 && duration <= 360,
                 DurationMins = duration,
                 RemainingPercent = Math.Max(0, 100 - used),
                 ResetsAt = reset
@@ -694,27 +707,13 @@ internal sealed class OverlayForm : Form
 
     private void ApplySnapshot(QuotaSnapshot snapshot)
     {
-        _remainingPercent = Math.Round(snapshot.RemainingPercent, 1);
-        _windowLabel = snapshot.WindowLabel;
-        _planText = snapshot.IsWeekly ? "실시간" : "최장 창";
-        _resetsAt = snapshot.ResetsAt;
+        _weeklyRemainingPercent = Math.Round(snapshot.RemainingPercent, 1);
+        _weeklyResetsAt = snapshot.ResetsAt;
+        _fiveHourRemainingPercent = snapshot.FiveHour == null ? (double?)null : Math.Round(snapshot.FiveHour.RemainingPercent, 1);
+        _fiveHourResetsAt = snapshot.FiveHour == null ? (DateTimeOffset?)null : snapshot.FiveHour.ResetsAt;
         _statusMessage = string.Empty;
-        _shortText = snapshot.Shorter == null
-            ? (snapshot.IsWeekly ? string.Empty : "주간 창 미제공")
-            : WindowLabel(snapshot.Shorter.DurationMins) + " " + Math.Round(snapshot.Shorter.RemainingPercent, 1).ToString("0.#") + "%";
-
-        if (_remainingPercent <= 10)
-        {
-            _accent = Color.FromArgb(248, 113, 113);
-        }
-        else if (_remainingPercent <= 30)
-        {
-            _accent = Color.FromArgb(251, 191, 36);
-        }
-        else
-        {
-            _accent = Color.FromArgb(33, 212, 155);
-        }
+        _weeklyAccent = AccentFor(_weeklyRemainingPercent);
+        _fiveHourAccent = AccentFor(_fiveHourRemainingPercent);
 
         Invalidate();
         if (_liveCheck)
@@ -726,26 +725,42 @@ internal sealed class OverlayForm : Form
 
     private void SetError(string message)
     {
-        _planText = "오프라인";
         _statusMessage = string.IsNullOrWhiteSpace(message) ? "알 수 없는 오류" : message.Replace(Environment.NewLine, " ");
-        _shortText = "↻ 재시도";
-        _accent = Color.FromArgb(248, 113, 113);
+        _weeklyRemainingPercent = null;
+        _fiveHourRemainingPercent = null;
+        _weeklyResetsAt = null;
+        _fiveHourResetsAt = null;
+        _weeklyAccent = Color.FromArgb(248, 113, 113);
+        _fiveHourAccent = _weeklyAccent;
         Invalidate();
     }
 
-    private string GetResetText()
+    private static Color AccentFor(double? remainingPercent)
+    {
+        if (!remainingPercent.HasValue || remainingPercent.Value <= 10)
+        {
+            return Color.FromArgb(248, 113, 113);
+        }
+        if (remainingPercent.Value <= 30)
+        {
+            return Color.FromArgb(251, 191, 36);
+        }
+        return Color.FromArgb(33, 212, 155);
+    }
+
+    private string GetResetText(DateTimeOffset? resetsAt)
     {
         if (!string.IsNullOrWhiteSpace(_statusMessage))
         {
             return _statusMessage;
         }
-        if (!_resetsAt.HasValue)
+        if (!resetsAt.HasValue)
         {
             return "초기화 시각 정보 없음";
         }
 
         DateTimeOffset now = DateTimeOffset.Now;
-        TimeSpan remaining = _resetsAt.Value - now;
+        TimeSpan remaining = resetsAt.Value - now;
         if (remaining.TotalSeconds <= 0)
         {
             return "곧 초기화";
@@ -765,7 +780,7 @@ internal sealed class OverlayForm : Form
             relative = Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes)) + "분 후";
         }
 
-        return "초기화 " + _resetsAt.Value.LocalDateTime.ToString("M월 d일 (ddd) tt h:mm", CultureInfo.GetCultureInfo("ko-KR")) + " · " + relative;
+        return "초기화 " + resetsAt.Value.LocalDateTime.ToString("M월 d일 (ddd) tt h:mm", CultureInfo.GetCultureInfo("ko-KR")) + " · " + relative;
     }
 
     private string FindCodexExecutable()
@@ -1070,6 +1085,7 @@ internal sealed class QuotaWindow
     internal string LimitId;
     internal bool IsMain;
     internal bool IsWeekly;
+    internal bool IsFiveHour;
     internal double DurationMins;
     internal double RemainingPercent;
     internal DateTimeOffset? ResetsAt;
@@ -1082,5 +1098,5 @@ internal sealed class QuotaSnapshot
     internal DateTimeOffset? ResetsAt;
     internal bool IsWeekly;
     internal string WindowLabel;
-    internal QuotaWindow Shorter;
+    internal QuotaWindow FiveHour;
 }
