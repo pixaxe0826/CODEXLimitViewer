@@ -1,6 +1,6 @@
 # Codex Limit Viewer
 
-Windows 화면 위에 Codex Plus의 5시간·주간 한도와 각 초기화 시각을 표시하는 가벼운 오버레이입니다.
+Windows 화면 위에 Codex의 남은 한도와 초기화 시각을 표시하는 가벼운 오버레이입니다. Plus에서는 5시간·주간 게이지를 함께 표시하고, Pro를 감지하면 적용되지 않는 5시간 게이지를 자동으로 숨깁니다.
 
 ![Codex Limit Viewer](assets/codex-quota-icon.png)
 
@@ -14,8 +14,9 @@ Windows SmartScreen이 표시되면 파일의 출처를 확인한 뒤 `추가 �
 
 ## 동작 방식
 
-- 공식 Codex App Server의 `account/rateLimits/read`를 호출합니다.
+- 공식 Codex App Server의 `account/read`로 ChatGPT 요금제를 확인하고 `account/rateLimits/read`로 한도를 조회합니다.
 - `usedPercent`에서 남은 비율을 계산하고, 약 5시간(300분) 창과 약 7일(10,080분) 창을 별도 게이지로 표시합니다.
+- 소비자 Pro를 나타내는 `planType`(`pro` 또는 `prolite`)이면 5시간 게이지와 구분선을 숨기고 창을 주간 게이지 크기로 자동 축소합니다.
 - 5시간 창을 현재 계정 응답에서 받을 수 없는 경우에는 해당 게이지에 `정보 없음`을 표시합니다.
 - 계정 토큰을 읽거나 복사하지 않습니다. 사용자의 기존 Codex 로그인 상태를 사용합니다.
 - Microsoft Store판 Codex는 첫 실행에 필요한 공식 `codex.exe` 복사본을 `%LOCALAPPDATA%\CodexQuotaOverlay\runtime`에 준비할 수 있습니다.

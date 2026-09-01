@@ -13,11 +13,11 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex Plus quotas")]
+[assembly: System.Reflection.AssemblyDescription("Windows overlay for remaining Codex quotas")]
 [assembly: System.Reflection.AssemblyCompany("Local")]
 [assembly: System.Reflection.AssemblyProduct("Codex Quota Overlay")]
-[assembly: System.Reflection.AssemblyVersion("1.3.7.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.7.0")]
+[assembly: System.Reflection.AssemblyVersion("1.4.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.4.0.0")]
 
 internal static class Program
 {
@@ -35,7 +35,7 @@ internal static class Program
         {
             if (!createdNew)
             {
-                MessageBox.Show("Codex Plus 한도 오버레이가 이미 실행 중입니다.", "Codex Plus 한도");
+                MessageBox.Show("Codex 한도 오버레이가 이미 실행 중입니다.", "Codex 한도");
                 return 0;
             }
 
@@ -65,9 +65,9 @@ internal static class Program
             {
                 Log("Fatal", exception);
                 MessageBox.Show(
-                    "Codex Plus 한도 오버레이를 실행하지 못했습니다.\r\n\r\n" + exception.Message +
+                    "Codex 한도 오버레이를 실행하지 못했습니다.\r\n\r\n" + exception.Message +
                     "\r\n\r\n로그: " + LogPath,
-                    "Codex Plus 한도",
+                    "Codex 한도",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 return 1;
@@ -102,7 +102,8 @@ internal static class Program
 internal sealed class OverlayForm : Form
 {
     private const int WidthPixels = 330;
-    private const int HeightPixels = 260;
+    private const int DualQuotaHeightPixels = 260;
+    private const int SingleQuotaHeightPixels = 149;
     private const int FiveHourSectionTop = 30;
     private const int WeeklySectionTop = 141;
     private const int SectionSeparatorY = 138;
@@ -123,10 +124,15 @@ internal sealed class OverlayForm : Form
     private bool _initialized;
     private bool _closing;
     private int _nextRequestId = 10;
-    private int _pendingRequestId = -1;
+    private int _pendingRateLimitsRequestId = -1;
+    private int _pendingAccountRequestId = -1;
     private DateTime _lastRequestAt = DateTime.MinValue;
     private DateTime _liveDeadline;
     private string _stderrTail = string.Empty;
+    private bool _accountCheckCompleted;
+    private bool _quotaCheckCompleted;
+    private bool _isProPlan;
+    private string _detectedPlanType;
 
     private double? _weeklyRemainingPercent;
     private DateTimeOffset? _weeklyResetsAt;
@@ -143,14 +149,14 @@ internal sealed class OverlayForm : Form
         _liveCheck = liveCheck;
         ExitCode = 0;
 
-        Text = "Codex Plus 한도";
+        Text = "Codex 한도";
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        ClientSize = new Size(WidthPixels, HeightPixels);
-        MinimumSize = new Size(WidthPixels, HeightPixels);
-        MaximumSize = new Size(WidthPixels, HeightPixels);
+        ClientSize = new Size(WidthPixels, DualQuotaHeightPixels);
+        MinimumSize = new Size(WidthPixels, DualQuotaHeightPixels);
+        MaximumSize = new Size(WidthPixels, DualQuotaHeightPixels);
         BackColor = Color.FromArgb(18, 24, 36);
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         DoubleBuffered = true;
@@ -195,11 +201,34 @@ internal sealed class OverlayForm : Form
         Dictionary<string, object> parsed = AsDictionary(_json.DeserializeObject(
             "{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":6,\"windowDurationMins\":300,\"resetsAt\":2000000000},\"secondary\":{\"usedPercent\":25,\"windowDurationMins\":10080,\"resetsAt\":2000500000}}}"));
         QuotaSnapshot snapshot = ParseSnapshot(parsed);
-        if (snapshot.FiveHour == null || !snapshot.IsWeekly || ClientSize.Width != WidthPixels || ClientSize.Height != HeightPixels)
+        if (snapshot.FiveHour == null || !snapshot.IsWeekly || ClientSize.Width != WidthPixels || ClientSize.Height != DualQuotaHeightPixels)
         {
             throw new InvalidOperationException("오버레이 구성 요소 검증에 실패했습니다.");
         }
-        ValidateLayout();
+
+        ValidateLayout(false);
+
+        Dictionary<string, object> proAccount = AsDictionary(_json.DeserializeObject(
+            "{\"account\":{\"type\":\"chatgpt\",\"email\":null,\"planType\":\"pro\"},\"requiresOpenaiAuth\":true}"));
+        string planType = ParsePlanType(proAccount);
+        if (!IsProPlan(planType) || !IsProPlan("prolite") || IsProPlan("plus"))
+        {
+            throw new InvalidOperationException("Pro 요금제 판별 검증에 실패했습니다.");
+        }
+
+        ApplyPlanType(planType);
+        if (!_isProPlan || ClientSize.Height != SingleQuotaHeightPixels)
+        {
+            throw new InvalidOperationException("Pro 단일 게이지 창 크기 검증에 실패했습니다.");
+        }
+        ValidateLayout(true);
+
+        ApplyPlanType("plus");
+        if (_isProPlan || ClientSize.Height != DualQuotaHeightPixels)
+        {
+            throw new InvalidOperationException("비 Pro 요금제 레이아웃 복원 검증에 실패했습니다.");
+        }
+        ValidateLayout(false);
     }
 
     protected override void OnShown(EventArgs e)
@@ -234,7 +263,7 @@ internal sealed class OverlayForm : Form
 
         using (Pen border = new Pen(Color.FromArgb(51, 68, 93), 1f))
         {
-            graphics.DrawRectangle(border, 0, 0, WidthPixels - 1, HeightPixels - 1);
+            graphics.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
         }
 
         using (SolidBrush dotBrush = new SolidBrush(_weeklyAccent))
@@ -246,12 +275,19 @@ internal sealed class OverlayForm : Form
             Color.FromArgb(200, 210, 225), new Rectangle(33, 2, 220, 24), TextFormatFlags.VerticalCenter);
         DrawHeaderControls(graphics);
 
-        DrawQuotaSection(graphics, "5시간 한도", _fiveHourRemainingPercent, _fiveHourResetsAt, _fiveHourAccent, FiveHourSectionTop);
-        using (Pen separator = new Pen(Color.FromArgb(43, 58, 79), 1f))
+        if (_isProPlan)
         {
-            graphics.DrawLine(separator, 18, SectionSeparatorY, 312, SectionSeparatorY);
+            DrawQuotaSection(graphics, "주간 한도", _weeklyRemainingPercent, _weeklyResetsAt, _weeklyAccent, FiveHourSectionTop);
         }
-        DrawQuotaSection(graphics, "주간 한도", _weeklyRemainingPercent, _weeklyResetsAt, _weeklyAccent, WeeklySectionTop);
+        else
+        {
+            DrawQuotaSection(graphics, "5시간 한도", _fiveHourRemainingPercent, _fiveHourResetsAt, _fiveHourAccent, FiveHourSectionTop);
+            using (Pen separator = new Pen(Color.FromArgb(43, 58, 79), 1f))
+            {
+                graphics.DrawLine(separator, 18, SectionSeparatorY, 312, SectionSeparatorY);
+            }
+            DrawQuotaSection(graphics, "주간 한도", _weeklyRemainingPercent, _weeklyResetsAt, _weeklyAccent, WeeklySectionTop);
+        }
     }
 
     private void DrawQuotaSection(Graphics graphics, string label, double? remainingPercent, DateTimeOffset? resetsAt, Color accent, int top)
@@ -346,24 +382,32 @@ internal sealed class OverlayForm : Form
 
     private void ValidateLayout()
     {
+        ValidateLayout(_isProPlan);
+    }
+
+    private void ValidateLayout(bool isProPlan)
+    {
         List<KeyValuePair<string, Rectangle>> components = new List<KeyValuePair<string, Rectangle>>
         {
             new KeyValuePair<string, Rectangle>("상태 점", new Rectangle(18, 10, 7, 7)),
             new KeyValuePair<string, Rectangle>("제목", new Rectangle(33, 2, 220, 24)),
             new KeyValuePair<string, Rectangle>("새로고침", _refreshBounds),
-            new KeyValuePair<string, Rectangle>("닫기", _closeBounds),
-            new KeyValuePair<string, Rectangle>("5시간 제목", SectionLabelBounds(FiveHourSectionTop)),
-            new KeyValuePair<string, Rectangle>("5시간 비율 및 남음", PercentageAndRemainingBounds(FiveHourSectionTop)),
-            new KeyValuePair<string, Rectangle>("5시간 진행도", ProgressTrackBounds(FiveHourSectionTop)),
-            new KeyValuePair<string, Rectangle>("5시간 초기화", ResetTextBounds(FiveHourSectionTop)),
-            new KeyValuePair<string, Rectangle>("구분선", new Rectangle(18, SectionSeparatorY, 294, 1)),
-            new KeyValuePair<string, Rectangle>("주간 제목", SectionLabelBounds(WeeklySectionTop)),
-            new KeyValuePair<string, Rectangle>("주간 비율 및 남음", PercentageAndRemainingBounds(WeeklySectionTop)),
-            new KeyValuePair<string, Rectangle>("주간 진행도", ProgressTrackBounds(WeeklySectionTop)),
-            new KeyValuePair<string, Rectangle>("주간 초기화", ResetTextBounds(WeeklySectionTop))
+            new KeyValuePair<string, Rectangle>("닫기", _closeBounds)
         };
 
-        Rectangle clientBounds = new Rectangle(0, 0, WidthPixels, HeightPixels);
+        if (isProPlan)
+        {
+            AddQuotaSectionComponents(components, "주간", FiveHourSectionTop);
+        }
+        else
+        {
+            AddQuotaSectionComponents(components, "5시간", FiveHourSectionTop);
+            components.Add(new KeyValuePair<string, Rectangle>("구분선", new Rectangle(18, SectionSeparatorY, 294, 1)));
+            AddQuotaSectionComponents(components, "주간", WeeklySectionTop);
+        }
+
+        int expectedHeight = isProPlan ? SingleQuotaHeightPixels : DualQuotaHeightPixels;
+        Rectangle clientBounds = new Rectangle(0, 0, WidthPixels, expectedHeight);
         List<string> problems = new List<string>();
         for (int index = 0; index < components.Count; index++)
         {
@@ -383,14 +427,32 @@ internal sealed class OverlayForm : Form
             }
         }
 
-        ValidatePercentageTrackGap(problems, "5시간", FiveHourSectionTop);
-        ValidatePercentageTrackGap(problems, "주간", WeeklySectionTop);
+        if (isProPlan)
+        {
+            ValidatePercentageTrackGap(problems, "주간", FiveHourSectionTop);
+        }
+        else
+        {
+            ValidatePercentageTrackGap(problems, "5시간", FiveHourSectionTop);
+            ValidatePercentageTrackGap(problems, "주간", WeeklySectionTop);
+        }
         ValidateQuotaTextFits(problems);
 
         if (problems.Count > 0)
         {
             throw new InvalidOperationException("오버레이 좌표 충돌:\r\n" + string.Join("\r\n", problems.ToArray()));
         }
+    }
+
+    private static void AddQuotaSectionComponents(
+        List<KeyValuePair<string, Rectangle>> components,
+        string sectionName,
+        int top)
+    {
+        components.Add(new KeyValuePair<string, Rectangle>(sectionName + " 제목", SectionLabelBounds(top)));
+        components.Add(new KeyValuePair<string, Rectangle>(sectionName + " 비율 및 남음", PercentageAndRemainingBounds(top)));
+        components.Add(new KeyValuePair<string, Rectangle>(sectionName + " 진행도", ProgressTrackBounds(top)));
+        components.Add(new KeyValuePair<string, Rectangle>(sectionName + " 초기화", ResetTextBounds(top)));
     }
 
     private static void ValidatePercentageTrackGap(List<string> problems, string sectionName, int top)
@@ -499,10 +561,34 @@ internal sealed class OverlayForm : Form
 
     private void DisplayTimerTick(object sender, EventArgs e)
     {
-        if (_pendingRequestId >= 0 && (DateTime.Now - _lastRequestAt).TotalSeconds > 20)
+        if ((_pendingRateLimitsRequestId >= 0 || _pendingAccountRequestId >= 0) &&
+            (DateTime.Now - _lastRequestAt).TotalSeconds > 20)
         {
-            _pendingRequestId = -1;
-            SetError("한도 조회 시간이 초과되었습니다.");
+            bool quotaTimedOut = _pendingRateLimitsRequestId >= 0;
+            bool accountTimedOut = _pendingAccountRequestId >= 0;
+            _pendingRateLimitsRequestId = -1;
+            _pendingAccountRequestId = -1;
+
+            if (accountTimedOut)
+            {
+                _accountCheckCompleted = true;
+                Program.Log("ChatGPT 요금제 조회 시간이 초과되어 기존 레이아웃을 유지합니다.");
+            }
+
+            if (quotaTimedOut)
+            {
+                SetError("한도 조회 시간이 초과되었습니다.");
+                if (_liveCheck)
+                {
+                    ExitCode = 1;
+                    Close();
+                    return;
+                }
+            }
+            else
+            {
+                TryCompleteLiveCheck();
+            }
         }
 
         if (_liveCheck && DateTime.Now > _liveDeadline)
@@ -525,7 +611,7 @@ internal sealed class OverlayForm : Form
             }
             else
             {
-                RequestRateLimits();
+                RequestAccountAndRateLimits();
             }
         }
         catch (Exception exception)
@@ -587,7 +673,10 @@ internal sealed class OverlayForm : Form
             _codexProcess.BeginOutputReadLine();
             _codexProcess.BeginErrorReadLine();
             _initialized = false;
-            _pendingRequestId = -1;
+            _pendingRateLimitsRequestId = -1;
+            _pendingAccountRequestId = -1;
+            _accountCheckCompleted = false;
+            _quotaCheckCompleted = false;
             _nextRequestId = 10;
 
             SendMessage(new Dictionary<string, object>
@@ -600,7 +689,7 @@ internal sealed class OverlayForm : Form
                             {
                                 { "name", "codex_quota_overlay" },
                                 { "title", "Codex Quota Overlay" },
-                                { "version", "1.1.0" }
+                                { "version", "1.4.0" }
                             }
                         }
                     }
@@ -686,13 +775,30 @@ internal sealed class OverlayForm : Form
                     { "params", new Dictionary<string, object>() }
                 });
                 _initialized = true;
-                RequestRateLimits();
+                RequestAccountAndRateLimits();
                 return;
             }
 
-            if (hasId && id == _pendingRequestId)
+            if (hasId && id == _pendingAccountRequestId)
             {
-                _pendingRequestId = -1;
+                _pendingAccountRequestId = -1;
+                _accountCheckCompleted = true;
+                try
+                {
+                    ThrowIfError(message, "요금제 조회 실패");
+                    ApplyPlanType(ParsePlanType(GetDictionary(message, "result")));
+                }
+                catch (Exception exception)
+                {
+                    Program.Log("Account read", exception);
+                }
+                TryCompleteLiveCheck();
+                return;
+            }
+
+            if (hasId && id == _pendingRateLimitsRequestId)
+            {
+                _pendingRateLimitsRequestId = -1;
                 ThrowIfError(message, "한도 조회 실패");
                 Dictionary<string, object> result = GetDictionary(message, "result");
                 ApplySnapshot(ParseSnapshot(result));
@@ -704,6 +810,11 @@ internal sealed class OverlayForm : Form
             {
                 Dictionary<string, object> parameters = GetDictionary(message, "params");
                 ApplySnapshot(ParseSnapshot(parameters));
+            }
+            else if (string.Equals(method, "account/updated", StringComparison.Ordinal))
+            {
+                Dictionary<string, object> parameters = GetDictionary(message, "params");
+                ApplyPlanType(GetString(parameters, "planType"));
             }
         }
         catch (Exception exception)
@@ -718,20 +829,105 @@ internal sealed class OverlayForm : Form
         }
     }
 
-    private void RequestRateLimits()
+    private void RequestAccountAndRateLimits()
     {
-        if (!_initialized || _pendingRequestId >= 0 || _codexProcess == null || _codexProcess.HasExited)
+        if (!_initialized || _codexProcess == null || _codexProcess.HasExited)
         {
             return;
         }
 
-        _pendingRequestId = _nextRequestId++;
-        _lastRequestAt = DateTime.Now;
-        SendMessage(new Dictionary<string, object>
+        bool sent = false;
+
+        if (_pendingAccountRequestId < 0)
         {
-            { "method", "account/rateLimits/read" },
-            { "id", _pendingRequestId }
-        });
+            _pendingAccountRequestId = _nextRequestId++;
+            SendMessage(new Dictionary<string, object>
+            {
+                { "method", "account/read" },
+                { "id", _pendingAccountRequestId },
+                { "params", new Dictionary<string, object>() }
+            });
+            sent = true;
+        }
+
+        if (_pendingRateLimitsRequestId < 0)
+        {
+            _pendingRateLimitsRequestId = _nextRequestId++;
+            SendMessage(new Dictionary<string, object>
+            {
+                { "method", "account/rateLimits/read" },
+                { "id", _pendingRateLimitsRequestId }
+            });
+            sent = true;
+        }
+
+        if (!sent)
+        {
+            return;
+        }
+
+        _lastRequestAt = DateTime.Now;
+    }
+
+    private static string ParsePlanType(Dictionary<string, object> result)
+    {
+        Dictionary<string, object> account = GetDictionary(result, "account");
+        return GetString(account, "planType");
+    }
+
+    private static bool IsProPlan(string planType)
+    {
+        return string.Equals(planType, "pro", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(planType, "prolite", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ApplyPlanType(string planType)
+    {
+        string normalized = string.IsNullOrWhiteSpace(planType) ? "unknown" : planType.Trim().ToLowerInvariant();
+        bool isProPlan = IsProPlan(normalized);
+        bool layoutChanged = _isProPlan != isProPlan;
+        bool planChanged = !string.Equals(_detectedPlanType, normalized, StringComparison.Ordinal);
+
+        _detectedPlanType = normalized;
+        _isProPlan = isProPlan;
+
+        if (layoutChanged)
+        {
+            ApplyPlanLayout();
+        }
+
+        if (planChanged)
+        {
+            int height = isProPlan ? SingleQuotaHeightPixels : DualQuotaHeightPixels;
+            Program.Log("ChatGPT 요금제 감지: " + normalized + "; 5시간 한도 표시: " + (!isProPlan) + "; 창 높이: " + height + "px");
+        }
+
+        Invalidate();
+    }
+
+    private void ApplyPlanLayout()
+    {
+        int desiredHeight = _isProPlan ? SingleQuotaHeightPixels : DualQuotaHeightPixels;
+        if (ClientSize.Width != WidthPixels || ClientSize.Height != desiredHeight)
+        {
+            MinimumSize = Size.Empty;
+            MaximumSize = Size.Empty;
+            ClientSize = new Size(WidthPixels, desiredHeight);
+            MinimumSize = new Size(WidthPixels, desiredHeight);
+            MaximumSize = new Size(WidthPixels, desiredHeight);
+            UpdateRoundedRegion();
+        }
+
+        ValidateLayout(_isProPlan);
+    }
+
+    private void TryCompleteLiveCheck()
+    {
+        if (_liveCheck && _accountCheckCompleted && _quotaCheckCompleted && !_closing)
+        {
+            ExitCode = 0;
+            Close();
+        }
     }
 
     private void SendMessage(Dictionary<string, object> message)
@@ -856,13 +1052,10 @@ internal sealed class OverlayForm : Form
         _statusMessage = string.Empty;
         _weeklyAccent = AccentFor(_weeklyRemainingPercent);
         _fiveHourAccent = AccentFor(_fiveHourRemainingPercent);
+        _quotaCheckCompleted = true;
 
         Invalidate();
-        if (_liveCheck)
-        {
-            ExitCode = 0;
-            Close();
-        }
+        TryCompleteLiveCheck();
     }
 
     private void SetError(string message)
@@ -1028,7 +1221,8 @@ internal sealed class OverlayForm : Form
         Process process = _codexProcess;
         _codexProcess = null;
         _initialized = false;
-        _pendingRequestId = -1;
+        _pendingRateLimitsRequestId = -1;
+        _pendingAccountRequestId = -1;
         if (process == null)
         {
             return;
@@ -1073,7 +1267,7 @@ internal sealed class OverlayForm : Form
     private void RestorePosition()
     {
         Rectangle work = Screen.PrimaryScreen.WorkingArea;
-        Location = new Point(work.Right - WidthPixels - 20, work.Bottom - HeightPixels - 20);
+        Location = new Point(work.Right - WidthPixels - 20, work.Bottom - DualQuotaHeightPixels - 20);
 
         try
         {
@@ -1089,7 +1283,7 @@ internal sealed class OverlayForm : Form
                 return;
             }
 
-            Rectangle candidate = new Rectangle(x, y, WidthPixels, HeightPixels);
+            Rectangle candidate = new Rectangle(x, y, WidthPixels, DualQuotaHeightPixels);
             if (Screen.AllScreens.Any(screen => screen.WorkingArea.IntersectsWith(candidate)))
             {
                 Location = new Point(x, y);
@@ -1116,7 +1310,7 @@ internal sealed class OverlayForm : Form
 
     private void UpdateRoundedRegion()
     {
-        IntPtr regionHandle = CreateRoundRectRgn(0, 0, WidthPixels + 1, HeightPixels + 1, 20, 20);
+        IntPtr regionHandle = CreateRoundRectRgn(0, 0, ClientSize.Width + 1, ClientSize.Height + 1, 20, 20);
         Region newRegion = Region.FromHrgn(regionHandle);
         DeleteObject(regionHandle);
         Region oldRegion = Region;
